@@ -13,6 +13,7 @@ from unittest import TestCase
 from tests.factories import AccountFactory
 from service.common import status
 from service.models import db, Account, init_db
+from service import talisman
 from service.routes import app
 
 DATABASE_URI = os.getenv(
@@ -21,6 +22,7 @@ DATABASE_URI = os.getenv(
 )
 
 BASE_URL = "/accounts"
+HTTPS_ENVIRON = {"wsgi.url_scheme": "https"}
 
 
 ######################################################################
@@ -36,6 +38,10 @@ class TestAccountService(TestCase):
         app.config["DEBUG"] = False
         app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URI
         app.logger.setLevel(logging.CRITICAL)
+
+        # Disable HTTPS redirects during testing
+        talisman.force_https = False
+
         init_db(app)
 
     @classmethod
@@ -51,6 +57,36 @@ class TestAccountService(TestCase):
     def tearDown(self):
         """Runs after each test"""
         db.session.remove()
+
+    ##################################################################
+    # SECURITY HEADER TESTS
+    ##################################################################
+
+    def test_security_headers(self):
+        """It should return the expected security headers over HTTPS"""
+        response = self.client.get(
+            "/",
+            environ_overrides=HTTPS_ENVIRON,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.assertEqual(
+            response.headers.get("X-Frame-Options"),
+            "SAMEORIGIN",
+        )
+        self.assertEqual(
+            response.headers.get("X-Content-Type-Options"),
+            "nosniff",
+        )
+        self.assertEqual(
+            response.headers.get("Content-Security-Policy"),
+            "default-src 'self'; object-src 'none'",
+        )
+        self.assertEqual(
+            response.headers.get("Referrer-Policy"),
+            "strict-origin-when-cross-origin",
+        )
 
     ##################################################################
     # HELPER METHODS
@@ -306,4 +342,15 @@ class TestAccountService(TestCase):
         self.assertEqual(
             response.status_code,
             status.HTTP_404_NOT_FOUND,
+        )
+    def test_cors_headers(self):
+        """It should return the expected CORS headers"""
+        response = app.test_client().get(
+            "/",
+            environ_overrides=HTTPS_ENVIRON,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers.get("Access-Control-Allow-Origin"),
+            "*",
         )
