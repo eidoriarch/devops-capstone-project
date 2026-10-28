@@ -343,3 +343,14 @@ class TestAccountService(TestCase):
             response.status_code,
             status.HTTP_404_NOT_FOUND,
         )
+    def test_cors_headers(self):
+        """It should return the expected CORS headers"""
+        response = app.test_client().get(
+            "/",
+            environ_overrides=HTTPS_ENVIRON,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers.get("Access-Control-Allow-Origin"),
+            "*",
+        )
